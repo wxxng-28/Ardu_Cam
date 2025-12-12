@@ -48,7 +48,8 @@ SPI_HandleTypeDef hspi1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+volatile uint8_t capture_requested = 0;
+uint8_t rx_data;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -58,12 +59,33 @@ static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
-
+void ArduCAM_CaptureImage(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+// 1. UART Receive Callback (ZYBO Trigger)
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART2)
+    {
+        // If we receive ANY character (e.g. 'S'), trigger capture
+        capture_requested = 1;
+        
+        // Listen again
+        HAL_UART_Receive_IT(&huart2, &rx_data, 1);
+    }
+}
 
+// 2. Button Interrupt Callback (Manual Trigger)
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == B1_Pin)
+    {
+        // Debounce simple check or just trigger
+        capture_requested = 1;
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -99,56 +121,55 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
+  
+  // Debug Message
+  HAL_UART_Transmit(&huart2, (uint8_t*)"[System] Trigger Mode Ready.\r\n", 30, 100);
+  HAL_UART_Transmit(&huart2, (uint8_t*)" - Send 'S' or Press Button to capture.\r\n", 41, 100);
+
   // ArduCam Init
-  HAL_UART_Transmit(&huart2, (uint8_t*)"System Start...\r\n", 17, 1000); // Debug: Check if UART works
   ArduCAM_Init();
   HAL_Delay(500);
-  HAL_Delay(100);
   
-  if (ArduCAM_CheckSPI()) {
-      HAL_UART_Transmit(&huart2, (uint8_t*)"SPI OK\r\n", 8, 100);
-  } else {
-      HAL_UART_Transmit(&huart2, (uint8_t*)"SPI FAIL. Halting.\r\n", 20, 100);
-      Error_Handler(); 
-  }
-  
-  if (ArduCAM_CheckSensor()) {
-      HAL_UART_Transmit(&huart2, (uint8_t*)"Sensor OK\r\n", 11, 100);
-  } else {
-      HAL_UART_Transmit(&huart2, (uint8_t*)"Sensor FAIL. Halting.\r\n", 23, 100);
-      Error_Handler();
-  }
-  
-  // Setup Sensor (JPEG 320x240 usually)
+  // Setup Sensor (JPEG 320x240)
   ArduCAM_OV5642_Init_JPEG();
+  ArduCAM_SetMode(0); // 0 = MCU Loop Mode
   
-  // Verify I2C Write (Check 0x3008 which should be 0x02 from Init_JPEG)
-  uint8_t reg_val = ArduCAM_ReadSensorReg16_8(0x3008);
-  if (reg_val == 0x02) {
-      char msg[32];
-      sprintf(msg, "Reg Verify OK: 0x%02X\r\n", reg_val);
-      HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-  } else {
-      char msg[32];
-      sprintf(msg, "Reg Verify FAIL: 0x%02X\r\n", reg_val);
-      HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-      Error_Handler();
-  }
+  // Start UART Listening
+  HAL_UART_Receive_IT(&huart2, &rx_data, 1);
 
-  ArduCAM_SetMode(0); // 0 = MCU Loop Mode (Snapshot)
-  
-  HAL_UART_Transmit(&huart2, (uint8_t*)"Warming up Sensor (2s)...\r\n", 27, 100);
-  HAL_Delay(2000); // Stabilization Delay
-  
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+      if (capture_requested)
+      {
+          HAL_UART_Transmit(&huart2, (uint8_t*)"[System] Capture Triggered!\r\n", 29, 100);
+          
+          // 1. Capture Image
+          ArduCAM_CaptureImage();
+          
+          // 2. Reset Trigger
+          capture_requested = 0;
+          
+          HAL_UART_Transmit(&huart2, (uint8_t*)"[System] Done. Waiting...\r\n", 27, 100);
+      }
+      
+      // Low power / fast loop checking flag
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+  }
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief ArduCAM_CaptureImage function
+  * @retval None
+  */
+void ArduCAM_CaptureImage(void)
+{
     ArduCAM_FlushFIFO();
     ArduCAM_ClearFIFOFlag();
     ArduCAM_StartCapture();
@@ -166,7 +187,7 @@ int main(void)
     
     if (!capture_done) {
         ArduCAM_ClearFIFOFlag();
-        continue;
+        return;
     }
     // ------------------------------------------------------
     
@@ -175,7 +196,7 @@ int main(void)
     
     if (length == 0 || length >= 0x7FFFFF) {
         ArduCAM_ClearFIFOFlag();
-        continue;
+        return;
     }
 
     // [CRITICAL] Reset Read Pointer to 0 before reading
@@ -209,8 +230,6 @@ int main(void)
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
     
     ArduCAM_ClearFIFOFlag();
-  }
-  /* USER CODE END 3 */
 }
 
 /**

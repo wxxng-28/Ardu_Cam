@@ -5,7 +5,7 @@ Release/
 .mxproject
 *.launch
 *.ioc
-*.ld
+# *.ld
 
 # Python
 __pycache__/
