@@ -108,3 +108,109 @@ python viewer.py
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 **Developers**: [Your Name]
+
+
+
+# STM32 ArduCAM OV5642 with Dual-Stream & Trigger
+
+This project implements a robust image capture system using **STM32F103RB (Nucleo)** and **ArduCAM OV5642 (5MP)**.  
+It features a **Dual-Stream Architecture** that allows simultaneous Debugging on PC and Data Processing on FPGA (ZYBO).
+
+---
+
+## 🚀 Key Features
+
+1.  **Dual Output System**:
+    *   **PC Stream (UART2)**: Continuous MJPEG video streaming to PC for real-time monitoring.
+    *   **ZYBO Trigger (SPI2)**: On-demand high-speed image transfer to ZYBO FPGA upon receiving a trigger command.
+2.  **Trigger Mechanisms**:
+    *   **ZYBO Trigger**: Send `'s'` char via UART1 -> STM32 captures and sends frame via SPI2.
+    *   **Manual Button**: Press Blue Button -> STM32 sends `"SAVE_NOW"` -> PC Script saves the snapshot.
+3.  **Python Tools**:
+    *   `viewer.py`: Real-time video viewer with diagnostic checks.
+    *   `save_snapshot.py`: Intelligent snapshot saver that syncs with the manual button.
+
+---
+
+## 🔌 Hardware Pinout
+
+### 1. Camera Connection (SPI1)
+| STM32 Pin | ArduCAM Pin | Function |
+| :--- | :--- | :--- |
+| **PA5** | SCK | SPI1 Clock |
+| **PA6** | MISO | SPI1 MISO |
+| **PA7** | MOSI | SPI1 MOSI |
+| **PA4** | CS | SPI1 Chip Select |
+| **PB6/PB7** | SDA/SCL | I2C Control |
+
+### 2. ZYBO FPGA Connection (SPI2 + UART1)
+| STM32 Pin | ZYBO Pin | Function |
+| :--- | :--- | :--- |
+| **PB13** | SCK | SPI2 Clock (Data) |
+| **PB15** | MOSI | SPI2 MOSI (Data) |
+| **PA10** | TX (FPGA) | UART1 RX (Trigger Input) |
+| **GND** | GND | Common Ground |
+
+### 3. PC Connection (UART2)
+| STM32 Pin | PC Connection | Function |
+| :--- | :--- | :--- |
+| **PA2** | USB RX | UART2 TX (Video Stream) |
+| **PA3** | USB TX | UART2 RX (Control) |
+
+---
+
+## 🛠️ How to Use
+
+### 1. STM32 Firmware
+1.  Open Project in **STM32CubeIDE**.
+2.  Build and Flash to Nucleo-F103RB.
+3.  **Boot Checks**: Watch the UART output (921600 baud).
+    *   `SPI OK`
+    *   `Sensor OK`
+    *   `Reg Verify OK`
+
+### 2. PC Viewer (Real-time Video)
+Displays the camera feed on your monitor.
+```bash
+python viewer.py
+```
+
+### 3. Saving Snapshots
+Saves a photo only when you press the **Blue Button** on the Nucleo board.
+```bash
+python save_snapshot.py
+```
+*   Run the script.
+*   The stream is ignored by default.
+*   **Press Blue Button** -> Script detects trigger -> Saves `snapshot_YYYYMMDD_...jpg`.
+
+### 4. ZYBO Integration
+*   Configure ZYBO UART to send `'s'` (0x73) to STM32 **PA10**.
+*   Configure ZYBO SPI Slave to receive data on **PB13/PB15**.
+*   **Protocol**:
+    1.  ZYBO sends `'s'`.
+    2.  STM32 Captures Frame.
+    3.  STM32 transmits JPEG Data via SPI2 (Master).
+
+---
+
+## ⚠️ Troubleshooting
+
+**Q1. `Sensor FAIL` or `Regs FAIL`?**
+*   Check I2C wiring (SDA/SCL).
+*   Ensure Camera Module is fully seated.
+*   **Note**: This project uses 16-bit register addresses for OV5642. Ensure your driver matches.
+
+**Q2. Viewer is lagging or broken image?**
+*   Check Baud Rate: **921600**.
+*   Ensure USB cable quality is good.
+
+**Q3. Board resets repeatedly?**
+*   Check for short circuits on the new SPI2/UART1 wires.
+*   Disconnect ZYBO and test again.
+
+---
+
+## 📜 License
+Available for educational and project use.
+
