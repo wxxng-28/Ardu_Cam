@@ -26,20 +26,23 @@ def main():
 
     buffer = bytearray()
     
+    save_requested = False
+    
     try:
         while True:
-            # 1. User Input (Trigger)
-            # This is a bit tricky in a loop, so we'll just listen mostly.
-            # To trigger via Python, we'd need a separate thread or non-blocking input.
-            # For simplicity, we just listen and let the user use the Button mostly,
-            # OR we send a trigger periodically.
-            
-            # Simple check for keyboard interrupt is handled by 'try-except'
-            
             # 2. Read Serial Data
             if ser.in_waiting > 0:
                 data = ser.read(ser.in_waiting)
                 buffer.extend(data)
+                
+                # [NEW] Look for Trigger Marker
+                marker_idx = buffer.find(b'SAVE_NOW')
+                if marker_idx != -1:
+                    print(" >> [TRIGGER] Button Detected! Saving next frame...")
+                    save_requested = True
+                    # Remove marker from buffer to avoid re-triggering
+                    # (Keep data after it, as it might be the start of the image)
+                    buffer = buffer[:marker_idx] + buffer[marker_idx + 8:]
                 
                 # Look for JPEG Start (0xFF 0xD8) and End (0xFF 0xD9)
                 start_idx = buffer.find(b'\xff\xd8')
@@ -49,17 +52,20 @@ def main():
                     # Extract JPEG data
                     jpg_data = buffer[start_idx : end_idx + 2]
                     
-                    # Generate Filename
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = os.path.join(SAVE_FOLDER, f"snapshot_{timestamp}.jpg")
+                    # Only Save if Requested
+                    if save_requested:
+                        # Generate Filename
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = os.path.join(SAVE_FOLDER, f"snapshot_{timestamp}.jpg")
+                        
+                        # Save File
+                        with open(filename, "wb") as f:
+                            f.write(jpg_data)
+                        
+                        print(f" >> [SAVED] {filename} ({len(jpg_data)} bytes)")
+                        save_requested = False # Reset Trigger
                     
-                    # Save File
-                    with open(filename, "wb") as f:
-                        f.write(jpg_data)
-                    
-                    print(f" >> [SAVED] {filename} ({len(jpg_data)} bytes)")
-                    
-                    # Clear buffer up to the end of this frame
+                    # Clear buffer up to the end of this frame (Always clear processed frames)
                     buffer = buffer[end_idx + 2:]
             
             # Prevent buffer explosion

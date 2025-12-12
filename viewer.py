@@ -74,7 +74,7 @@ def main():
 
     buffer = bytearray()
 
-    print("Waiting for image data...")
+    print("Starting Video Stream (Continuous)...")
     
     last_print = time.time()
     frame_count = 0
@@ -98,17 +98,16 @@ def main():
                     img = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
                     
                     if img is not None:
-                        cv2.imshow('ArduCam Stream', img)
                         frame_count += 1
-                        if frame_count % 10 == 0:
-                            print(f"Frames: {frame_count} (Last: {len(jpg_data)}B)")
+                        cv2.imshow('STM32 ArduCAM Stream', img)
                         
                         if cv2.waitKey(1) & 0xFF == ord('q'):
                             break
                     else:
-                        print(f"Decode Fail ({len(jpg_data)}B)")
+                        print(" [Error] Corrupt JPEG")
+                        
                 except Exception as e:
-                    print(f"Error: {e}")
+                    print(f"Decode Error: {e}")
                 
                 # Clear buffer up to the end of this frame
                 buffer = buffer[end_idx + 2:]
